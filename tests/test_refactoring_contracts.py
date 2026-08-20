@@ -3,7 +3,7 @@ import json
 import re
 import sys
 from datetime import datetime
-from pathlib import Path
+from pathlib import Path, PureWindowsPath
 from types import SimpleNamespace
 from typing import Any, Optional
 
@@ -53,7 +53,11 @@ def _fake_aggregates(base: float) -> dict:
 
 
 def _normalize_artifact(text: str, root: Path) -> str:
-    normalized = text.replace(str(root), "<ROOT>")
+    root_text = str(root)
+    normalized = text.replace(root_text.replace("\\", "\\\\"), "<ROOT>")
+    normalized = normalized.replace(root_text, "<ROOT>")
+    normalized = normalized.replace("<ROOT>\\\\", "<ROOT>/")
+    normalized = normalized.replace("<ROOT>\\", "<ROOT>/")
     normalized = re.sub(r"\d{8}_\d{6}", "<STAMP>", normalized)
     normalized = re.sub(
         r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?",
@@ -62,6 +66,33 @@ def _normalize_artifact(text: str, root: Path) -> str:
     )
     normalized = re.sub(r"TIDE \d+\.\d+\.\d+", "TIDE <VERSION>", normalized)
     return normalized
+
+
+def test_artifact_normalization_handles_windows_paths() -> None:
+    root = Path(r"C:\Users\runneradmin\AppData\Local\Temp\pytest-0\test_contract")
+    text = (
+        r"plain: C:\Users\runneradmin\AppData\Local\Temp\pytest-0\test_contract\out.txt"
+        "\n"
+        r"json: C:\\Users\\runneradmin\\AppData\\Local\\Temp\\pytest-0\\test_contract\\out.txt"
+    )
+
+    assert _normalize_artifact(text, root) == ("plain: <ROOT>/out.txt\njson: <ROOT>/out.txt")
+
+
+def test_report_relative_paths_use_url_separators() -> None:
+    class ResolvedPath:
+        def __init__(self, value: PureWindowsPath) -> None:
+            self.value = value
+
+        def resolve(self) -> PureWindowsPath:
+            return self.value
+
+    root = PureWindowsPath(r"C:\Users\runneradmin\report")
+    image = root / "visualizations" / "target_composite.png"
+
+    assert io._reporting._relative_path(ResolvedPath(image), ResolvedPath(root)) == (
+        "visualizations/target_composite.png"
+    )
 
 
 def _make_config(root: Path) -> SimNIBSConfig:

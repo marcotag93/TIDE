@@ -6,6 +6,7 @@ Covers the functions that produce every published MSO/SEI number:
 aggregation) and ``run_unified_estimation`` (SEI, multiplier, ΔMSO identity).
 """
 
+import re
 import sys
 from pathlib import Path
 
@@ -164,7 +165,7 @@ class TestAnalyzeBundleMasking:
         cfg = _config(trk, trk)
         missing = tmp_path / "missing_weights.txt"
 
-        with pytest.raises(FileNotFoundError, match=str(missing)):
+        with pytest.raises(FileNotFoundError, match=re.escape(str(missing))):
             analyze_bundle("B", str(trk), np.zeros(3), cfg, weight_path=str(missing))
 
 
@@ -266,7 +267,7 @@ class TestRunUnifiedEstimation:
     def test_missing_weight_path_is_not_dropped(self, tmp_path, weight_arg):
         missing = tmp_path / f"missing_{weight_arg}.txt"
 
-        with pytest.raises(FileNotFoundError, match=str(missing)):
+        with pytest.raises(FileNotFoundError, match=re.escape(str(missing))):
             self._run(tmp_path, 100.0, 100.0, **{weight_arg: missing})
 
     def test_zero_target_metric_yields_estimation_failed(self, tmp_path):

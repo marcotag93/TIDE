@@ -13,6 +13,7 @@ above 1% must raise.
 
 import importlib
 import json
+import re
 import sys
 import textwrap
 import types
@@ -634,7 +635,7 @@ class TestWorkflowPreflight:
         missing = tmp_path / "missing.txt"
         config = self._config(tmp_path, weights_target=missing)
 
-        with pytest.raises(FileNotFoundError, match=str(missing)):
+        with pytest.raises(FileNotFoundError, match=re.escape(str(missing))):
             validate_workflow_config(config, workflow)
 
     def test_simulation_ignores_unused_cst_weight(self, tmp_path):

@@ -71,9 +71,9 @@ def _relative_path(path: Optional[Path], start: Path) -> str:
     if path is None:
         return "N/A"
     try:
-        return str(path.resolve().relative_to(start.resolve()))
+        return path.resolve().relative_to(start.resolve()).as_posix()
     except ValueError:
-        return str(path)
+        return path.as_posix()
 
 
 def _human_report_type(report_type: str) -> str:
