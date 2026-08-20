@@ -251,4 +251,5 @@ jobs:
         run: |
           gh release upload "${RELEASE_TAG}" \
             dist/* release-metadata/SHA256SUMS release-metadata/uv.lock \
+            --repo "${GITHUB_REPOSITORY}" \
             --clobber
