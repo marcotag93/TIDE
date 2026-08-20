@@ -8,6 +8,7 @@ environment-independent: they neither require SimNIBS to be installed nor
 mutate the caller's environment.
 """
 
+import logging
 import os
 import subprocess
 import sys
@@ -15,7 +16,7 @@ import textwrap
 import types
 from pathlib import Path
 from types import SimpleNamespace
-from typing import Optional
+from typing import Iterator, Optional
 
 import pytest
 import yaml
@@ -25,6 +26,21 @@ MAIN_PY = REPO_ROOT / "main.py"
 SRC_DIR = REPO_ROOT / "src"
 _RELAUNCH_MARKER = "_TIDE_SIMNIBS_RELAUNCHED"
 sys.path.insert(0, str(SRC_DIR))
+
+
+@pytest.fixture(autouse=True)
+def _restore_logging_state() -> Iterator[None]:
+    root = logging.getLogger()
+    original_handlers = list(root.handlers)
+    original_level = root.level
+
+    yield
+
+    for handler in root.handlers:
+        if handler not in original_handlers:
+            handler.close()
+    root.handlers[:] = original_handlers
+    root.setLevel(original_level)
 
 
 def _simnibs_importable() -> bool:

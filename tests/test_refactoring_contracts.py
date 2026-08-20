@@ -56,8 +56,11 @@ def _normalize_artifact(text: str, root: Path) -> str:
     root_text = str(root)
     normalized = text.replace(root_text.replace("\\", "\\\\"), "<ROOT>")
     normalized = normalized.replace(root_text, "<ROOT>")
-    normalized = normalized.replace("<ROOT>\\\\", "<ROOT>/")
-    normalized = normalized.replace("<ROOT>\\", "<ROOT>/")
+    normalized = re.sub(
+        r'<ROOT>[^"\r\n]*',
+        lambda match: match.group(0).replace("\\\\", "/").replace("\\", "/"),
+        normalized,
+    )
     normalized = re.sub(r"\d{8}_\d{6}", "<STAMP>", normalized)
     normalized = re.sub(
         r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?",
@@ -71,12 +74,14 @@ def _normalize_artifact(text: str, root: Path) -> str:
 def test_artifact_normalization_handles_windows_paths() -> None:
     root = Path(r"C:\Users\runneradmin\AppData\Local\Temp\pytest-0\test_contract")
     text = (
-        r"plain: C:\Users\runneradmin\AppData\Local\Temp\pytest-0\test_contract\out.txt"
+        r"plain: C:\Users\runneradmin\AppData\Local\Temp\pytest-0\test_contract\nested\out.txt"
         "\n"
-        r"json: C:\\Users\\runneradmin\\AppData\\Local\\Temp\\pytest-0\\test_contract\\out.txt"
+        r"json: C:\\Users\\runneradmin\\AppData\\Local\\Temp\\pytest-0\\test_contract\\nested\\out.txt"
     )
 
-    assert _normalize_artifact(text, root) == ("plain: <ROOT>/out.txt\njson: <ROOT>/out.txt")
+    assert _normalize_artifact(text, root) == (
+        "plain: <ROOT>/nested/out.txt\njson: <ROOT>/nested/out.txt"
+    )
 
 
 def test_report_relative_paths_use_url_separators() -> None:
