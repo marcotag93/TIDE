@@ -1,0 +1,140 @@
+# =============================================================================
+# TIDE Pipeline — Annotated Configuration Template
+# =============================================================================
+# Replace every "/path/to/..." placeholder with an absolute path on your
+# system before running. Comments explain each field, accepted formats, and
+# typical value ranges.
+# =============================================================================
+
+# =============================================================================
+# subject  — paths to the subject-specific inputs
+# =============================================================================
+subject:
+  id: "sub-XXX"                                 # Subject identifier; used as folder/file prefix.
+  derivatives_path: /path/to/derivatives/sub-XXX  # Pipeline writes outputs under this directory.
+  # cache_dir: /path/to/tide_cache               # Optional — fixed-pose cache base dir.
+                                                 # Omit to use the default (~/.cache/tide).
+                                                 # Set to "no" to disable the cache (same as --no-cache).
+  # cache_max_size_gb: 0                          # Optional — fixed-pose cache size cap in GB
+                                                 # (LRU eviction at startup). 0/omitted = unlimited.
+  m2m_path: /path/to/derivatives/sub-XXX/m2m_sub-XXX  # SimNIBS head model (output of charm/headreco).
+
+  # ---------------------------------------------------------------------------
+  # files — required and optional inputs
+  # ---------------------------------------------------------------------------
+  files:
+    t1w: /path/to/sub-XXX_T1w.nii.gz            # Subject T1w in scanner RAS (acpc-aligned recommended).
+    weights_cst: /path/to/CST_left.txt          # Optional — SIFT2 streamline weights for CST (.txt).
+    weights_target: /path/to/target_bundle.txt  # Optional — SIFT2 weights (.txt) or TractSeg map (.nii/.nii.gz).
+    surface: /path/to/lh.white.scanner.white    # FreeSurfer pial/white surface in SCANNER RAS.
+                                                # Convert with:
+                                                #   mris_convert --to-scanner lh.white lh.white.scanner.white
+
+# =============================================================================
+# workflow  — pipeline to run (overridden by the --workflow CLI flag)
+# =============================================================================
+# One of: estimation | grid | simulation | optimization. Omit or leave blank to
+# auto-select (estimation when a target bundle is set, otherwise simulation).
+workflow: estimation
+
+# =============================================================================
+# coil  — TMS device and coil model
+# =============================================================================
+coil:
+  coil_model: "MagVenture_C-B60.ccd"  # File name of the coil definition shipped with SimNIBS.
+  coil_path: ""                       # Custom .ccd path or coil directory; leave empty for auto-detect.
+  coil_distance_mm: 4.0               # Scalp-to-coil distance in mm (default 4.0).
+  device_didt_max: 161e6              # Max dI/dt of your stimulator in A/s (e.g. MagVenture X100 = 161e6).
+
+# =============================================================================
+# options  — algorithm knobs
+# =============================================================================
+options:
+  # --- ROI / activation ----------------------------------------------------
+  roi_size_mm: 20.0              # Radius (mm) of the spherical ROI used for AF analysis (typical 20-40).
+  activation_length_mm: 6.0      # Required contiguous activated axonal length (mm). Default 6.0; 4.0 is also common.
+  field_mode: "af"               # "af" required for estimation/grid, it refers to activating function (d(E*T)); "e_parallel" is parallel e-field (E * T).
+                                 # AF uses uniform 0.5 mm arc-length resampling and 2.5 mm physical smoothing.
+
+  # --- Visualization -------------------------------------------------------
+  generate_3d_visualization: false  # Render PyVista PNGs plus sampled lightweight HTML previews.
+  generate_visualization: true      # Save NIfTI overlays of |AF| / E-field for use in FSLeyes/MRIcroGL.
+  visualization_dpi: 300            # DPI for any matplotlib figures emitted by the pipeline.
+
+  # --- Softaxic export -----------------------------------------------------
+  # stmpx_dataset_name: "20260717-TIDE-SUB_XXX"  # Optional replacement for the
+                                                  # output <fmpm dataset="..."> value.
+
+  # --- Parallelism ---------------------------------------------------------
+  max_workers: 4         # Worker count for grid search and parallel stages.
+  no_parallel: false     # true = force single-process (debug / low-memory machines).
+
+  # --- Streamline quality filter ------------------------------------------
+  max_angular_deviation_deg: 0.0   # Drop streamlines whose consecutive tangent vectors deviate more than
+                                   # this within the ROI. Set 0.0 to disable.
+
+  # --- MSO clamping --------------------------------------------------------
+  mso_floor_ratio: 0.70    # Lower bound for estimated MSO as a fraction of RMT (0.70 = MSO >= 70% RMT).
+  mso_ceiling_ratio: 1.40  # Upper bound for estimated MSO as a fraction of RMT (1.40 = MSO <= 140% RMT).
+
+  # --- TMS optimization (used unless a 4x4 orientation matrix is provided) -
+  adm_optimization: true       # true = ADM (fast, ROI-mean E only); false = direct (slow, full 3D E).
+                               # ADM is REQUIRED for AF-driven cost? — NO; ADM cannot drive AF (see note above).
+  opt_search_radius: 10.0      # Scalp search radius in mm (10 mm -> ~20 mm diameter disc).
+  opt_search_angle: 30.0       # Total angular sweep in degrees, centered on the orientation reference.
+  opt_angle_resolution: 10.0   # Angular step in degrees.
+  opt_spatial_resolution: 2.0  # Spatial step in mm on the SimNIBS scalp grid.
+
+# =============================================================================
+# experiment  — calibration site, target site, and grid-search settings
+# =============================================================================
+# `tide --stmpx /path/session.stmpx` appends the completed Target Estimation
+# pose to `<input_stem>_updated.stmpx` after an estimation run. It does not use
+# the STMPX pose as a simulation input; orientation fields below remain the
+# authoritative SimNIBS inputs.
+# =============================================================================
+experiment:
+
+  # ---------------------------------------------------------------------------
+  # 1. calibration  — motor cortex / CST reference site
+  # ---------------------------------------------------------------------------
+  calibration:
+    label: "M1"                                       # Free-form label used in output file names.
+    bundle_path: /path/to/CST_left.trk                # CST tractogram (TRK in scanner RAS).
+    orientation:                                      # Optional 4x4 matsimnibs OR [x,y,z] vector OR EEG label.
+    coords: [-13.28, -26.71, 63.00]                   # Cortical M1 hotspot in RAS (mm).
+    scalp_coords: [-13.28, -26.71, 85.00]             # Scalp projection of the hotspot in RAS (mm).
+    measured_rmt_mso: 38.0                            # Measured resting motor threshold as % MSO.
+
+  # ---------------------------------------------------------------------------
+  # 2. target  — region whose dose you want to estimate
+  # ---------------------------------------------------------------------------
+  # Note: for TIDE workflows the absolute intensity is not used (unit dI/dt is
+  # assumed). Intensity fields are kept for the standard simulation workflow.
+  # The nested `grid` block drives `--workflow grid`; it reuses this target's
+  # coords / scalp_coords / orientation as the grid center and per-point seed.
+  target:
+    label: "TARGET_LABEL"                             # Used in output file/directory names.
+    bundle_path: /path/to/target_bundle.trk           # Target tractogram (TRK in scanner RAS).
+    cortical_medoid: false                            # true = auto-replace `coords` with the medoid of the
+                                                      # most-cortical streamline endpoints near `coords`.
+    orientation:                                      # 4x4 matrix OR [x,y,z] vector OR EEG label (e.g. "F8").
+    coords: [-11.00, -47.18, 59.00]                   # Cortical target in RAS (mm).
+    scalp_coords: [-11.00, -47.18, 83.00]             # Scalp coords in RAS (mm); auto-projected if omitted.
+    didt:                                             # Optional dI/dt override (A/s). Highest priority.
+    mso: 100                                          # MSO % used by the standard simulation workflow only.
+
+    # -------------------------------------------------------------------------
+    # grid  — settings for `--workflow grid` (only the search geometry)
+    # -------------------------------------------------------------------------
+    # The grid search explores scalp positions around this target, reusing the
+    # target `coords` (center), `scalp_coords` (scalp seed), and `orientation`
+    # (per-point pos_ydir seed) above. Only the search geometry lives here.
+    # IMPORTANT: for a grid run the target `orientation` MUST be a vector or EEG
+    # label, NOT a 4x4 matrix (each grid point is independently optimized from
+    # that seed).
+    grid:
+      search_radius_mm: 20.0              # Half-extent (mm) of the grid on the scalp.
+      step_size_mm: 4.0                   # Spacing (mm) between adjacent grid points (default 4.0).
+      cortex_depth_mm: 2.0                # Depth (mm) below the cortical surface for grid construction
+                                          # (default 2.0; ~2-3 T1w slices).

@@ -1,0 +1,254 @@
+name: Release
+
+# Trusted Publishing (OIDC): no API token stored.
+#
+# Configure pending publishers independently on PyPI and TestPyPI for:
+#   owner:       marcotag93
+#   repository:  TIDE
+#   workflow:    release.yml
+#   environment: pypi / testpypi
+#
+# A manual run from an exact version tag publishes only to TestPyPI. Publishing
+# a GitHub Release from that same tag rebuilds the artifacts, verifies that they
+# are byte-identical to TestPyPI, and only then promotes them to PyPI.
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  ci:
+    name: CI quality gate
+    uses: ./.github/workflows/ci.yml
+
+  build:
+    name: Validate + build sdist/wheel
+    needs: ci
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: "3.11"
+      - name: Install uv
+        uses: astral-sh/setup-uv@e58605a9b6da7c637471fab8847a5e5a6b8df081 # v5
+        with:
+          version: "0.12.1"
+      - name: Verify package and citation versions
+        run: python scripts/check_release_metadata.py
+      - name: Verify GitHub release tag
+        if: github.event_name == 'release'
+        env:
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+        run: python scripts/check_release_metadata.py --tag "${RELEASE_TAG}"
+      - name: Verify manual TestPyPI tag
+        if: github.event_name == 'workflow_dispatch'
+        run: |
+          if [ "${GITHUB_REF_TYPE}" != "tag" ]; then
+            echo "TestPyPI publication must be dispatched from a version tag." >&2
+            exit 1
+          fi
+          python scripts/check_release_metadata.py --tag "${GITHUB_REF_NAME}"
+      - name: Set reproducible build timestamp
+        run: echo "SOURCE_DATE_EPOCH=$(git log -1 --format=%ct)" >> "${GITHUB_ENV}"
+      - name: Build reproducible distributions
+        run: uv build
+      - name: Validate PyPI metadata and README rendering
+        run: uvx --from twine==7.0.0 twine check dist/*
+      - name: Prepare immutable release metadata
+        run: |
+          mkdir -p release-metadata
+          cp uv.lock release-metadata/uv.lock
+          python -c "from scripts.check_release_metadata import package_version; print(package_version())" > release-metadata/version.txt
+          (
+            cd dist
+            sha256sum * > ../release-metadata/SHA256SUMS
+          )
+      - name: Upload distributions
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: dist
+          path: dist/
+          if-no-files-found: error
+      - name: Upload release metadata
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: release-metadata
+          path: release-metadata/
+          if-no-files-found: error
+
+  smoke:
+    name: Verify built wheel
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: "3.11"
+      - name: Download artifacts
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: dist
+          path: dist/
+      - name: Install wheel without runtime dependencies
+        run: python -m pip install --no-deps dist/*.whl
+      - name: Verify package, bundled config, and console script
+        working-directory: /tmp
+        run: |
+          python -I -c "import importlib.metadata as m, importlib.resources as r, tide; print(m.version('tide-pipeline')); print(tide.__file__); assert r.files('tide').joinpath('assets').joinpath('logo.ansi').is_file(); assert r.files('tide').joinpath('data').joinpath('config_template.yml').is_file()"
+          python -m tide --help
+          tide --help
+          tide --init-config /tmp/tide-smoke-config.yml
+          test -s /tmp/tide-smoke-config.yml
+          grep -q '^subject:' /tmp/tide-smoke-config.yml
+
+  testpypi:
+    name: Publish to TestPyPI
+    needs: [build, smoke]
+    runs-on: ubuntu-latest
+    environment:
+      name: testpypi
+      url: https://test.pypi.org/project/tide-pipeline/
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - name: Download artifacts
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: dist
+          path: dist/
+      - name: Publish
+        uses: pypa/gh-action-pypi-publish@dc37677b2e1c63e2034f94d8a5b11f265b73ba33 # release/v1
+        with:
+          repository-url: https://test.pypi.org/legacy/
+          skip-existing: true
+          print-hash: true
+
+  testpypi-smoke:
+    name: Verify exact TestPyPI artifacts
+    needs: [build, testpypi]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: "3.11"
+      - name: Download locally built distributions
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: dist
+          path: dist/
+      - name: Download release metadata
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: release-metadata
+          path: release-metadata/
+      - name: Verify TestPyPI hashes and download exact artifacts
+        run: |
+          python - <<'PY'
+          import hashlib
+          import json
+          import time
+          import urllib.request
+          from pathlib import Path
+
+          version = Path("release-metadata/version.txt").read_text().strip()
+          api_url = f"https://test.pypi.org/pypi/tide-pipeline/{version}/json"
+          last_error = None
+          for attempt in range(24):
+              try:
+                  with urllib.request.urlopen(api_url, timeout=30) as response:
+                      payload = json.load(response)
+                  break
+              except Exception as exc:
+                  last_error = exc
+                  if attempt == 23:
+                      raise RuntimeError(f"TestPyPI did not index {version}: {last_error}")
+                  time.sleep(5)
+
+          expected = {
+              path.name: hashlib.sha256(path.read_bytes()).hexdigest()
+              for path in Path("dist").iterdir()
+              if path.is_file()
+          }
+          published = {entry["filename"]: entry for entry in payload["urls"]}
+          if set(expected) != set(published):
+              raise RuntimeError(
+                  f"Artifact set differs: local={sorted(expected)}, "
+                  f"TestPyPI={sorted(published)}"
+              )
+
+          destination = Path("testpypi-dist")
+          destination.mkdir()
+          for filename, expected_hash in expected.items():
+              entry = published[filename]
+              if entry["digests"]["sha256"] != expected_hash:
+                  raise RuntimeError(f"TestPyPI hash differs for {filename}")
+              with urllib.request.urlopen(entry["url"], timeout=60) as response:
+                  content = response.read()
+              if hashlib.sha256(content).hexdigest() != expected_hash:
+                  raise RuntimeError(f"Downloaded hash differs for {filename}")
+              (destination / filename).write_bytes(content)
+              print(f"Verified {filename}: sha256:{expected_hash}")
+          PY
+      - name: Install the exact TestPyPI wheel with runtime dependencies
+        run: python -m pip install testpypi-dist/*.whl
+      - name: Smoke-test the TestPyPI wheel
+        working-directory: /tmp
+        run: |
+          python -I -c "import importlib.metadata as m, importlib.resources as r, tide; print(m.version('tide-pipeline')); assert r.files('tide').joinpath('data').joinpath('config_template.yml').is_file()"
+          python -m tide --help
+          tide --help
+
+  pypi:
+    name: Publish to PyPI
+    if: github.event_name == 'release'
+    needs: [build, smoke, testpypi-smoke]
+    runs-on: ubuntu-latest
+    environment:
+      name: pypi
+      url: https://pypi.org/project/tide-pipeline/
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - name: Download artifacts
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: dist
+          path: dist/
+      - name: Publish
+        uses: pypa/gh-action-pypi-publish@dc37677b2e1c63e2034f94d8a5b11f265b73ba33 # release/v1
+        with:
+          print-hash: true
+
+  github-assets:
+    name: Attach distributions and frozen environment
+    if: github.event_name == 'release'
+    needs: [build, pypi]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Download distributions
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: dist
+          path: dist/
+      - name: Download release metadata
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: release-metadata
+          path: release-metadata/
+      - name: Attach release artifacts
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+        run: |
+          gh release upload "${RELEASE_TAG}" \
+            dist/* release-metadata/SHA256SUMS release-metadata/uv.lock \
+            --clobber

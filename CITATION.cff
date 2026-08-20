@@ -1,0 +1,45 @@
+cff-version: 1.2.0
+message: "If you use TIDE in your research, please cite the accompanying preprint. The TIDE software release is archived separately on Zenodo."
+type: software
+title: "TIDE: Tractography-Informed Dose Estimation"
+authors:
+  - family-names: "Tagliaferri"
+    given-names: "Marco"
+    email: "marco.tagliaferri@unitn.it"
+    orcid: "https://orcid.org/0000-0002-1800-3977"
+version: "1.30.0"
+url: "https://github.com/marcotag93/TIDE"
+repository-code: "https://github.com/marcotag93/TIDE"
+license: "GPL-3.0-or-later"
+identifiers:
+  - type: doi
+    value: "10.5281/zenodo.22019737"
+    description: "Zenodo DOI for the TIDE software release."
+abstract: "TIDE is a SimNIBS-based research pipeline for tractography-informed estimation of individualised transcranial magnetic stimulation intensity using motor-threshold calibration and the gradient activating function along subject-specific streamlines."
+keywords:
+  - "transcranial magnetic stimulation"
+  - "TMS"
+  - "SimNIBS"
+  - "tractography"
+  - "diffusion MRI"
+  - "activating function"
+  - "electric field"
+  - "dose estimation"
+  - "neurostimulation"
+  - "Python"
+preferred-citation:
+  type: article
+  title: "TIDE: Tractography-Informed Dose Estimation for individualised TMS intensity"
+  authors:
+    - family-names: "Tagliaferri"
+      given-names: "Marco"
+    - family-names: "Cattaneo"
+      given-names: "Luigi"
+    - family-names: "Miniussi"
+      given-names: "Carlo"
+    - family-names: "Brancaccio"
+      given-names: "Arianna"
+  journal: "bioRxiv"
+  year: 2026
+  status: preprint
+  notes: "Manuscript in preparation. bioRxiv DOI placeholder: 10.1101/<BIOARXIV_DOI>."

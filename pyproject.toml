@@ -1,0 +1,164 @@
+[build-system]
+requires = ["hatchling==1.27.0"]
+build-backend = "hatchling.build"
+
+[project]
+name = "tide-pipeline"
+dynamic = ["version"]
+description = "TIDE (Tractography-Informed Dose Estimation) Pipeline — A SimNIBS-based tool for TMS target intensity estimation using the Activating Function"
+readme = "README.md"
+requires-python = ">=3.11,<3.13"
+license = "GPL-3.0-or-later"
+license-files = ["LICENSE"]
+authors = [{ name = "Marco Tagliaferri", email = "marco.tagliaferri@unitn.it" }]
+maintainers = [{ name = "Marco Tagliaferri", email = "marco.tagliaferri@unitn.it" }]
+keywords = [
+    "TMS",
+    "SimNIBS",
+    "neuroimaging",
+    "brain-stimulation",
+    "activating-function",
+]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Environment :: Console",
+    "Intended Audience :: Science/Research",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Scientific/Engineering :: Medical Science Apps.",
+    "Topic :: Scientific/Engineering :: Bio-Informatics",
+]
+
+# SimNIBS is a system dependency, installed separately (not on PyPI); it must
+# never be listed here. See https://simnibs.github.io/simnibs/ and
+# `tide --bootstrap` for installing into the SimNIBS environment.
+dependencies = [
+    "numpy==1.26.4",
+    "scipy==1.12.0",
+    "nibabel==5.2.1",
+    "dipy==1.9.0",
+    "pandas==2.2.3",
+    "PyYAML==6.0.1",
+    "defusedxml==0.7.1",
+    "scikit-learn==1.5.2",
+    "matplotlib==3.8.3",
+]
+
+[project.optional-dependencies]
+# Optional 3D rendering (lazy-imported by interfaces/visualization_3d.py).
+viz = ["pyvista==0.43.3", "vtk==9.3.0"]
+dev = [
+    "pytest==9.0.3",
+    "pytest-cov==4.1.0",
+    "pytest-xdist==3.5.0",
+    "black==26.3.1",
+    "isort==5.13.2",
+    "flake8==7.0.0",
+    "mypy==1.8.0",
+    "types-PyYAML==6.0.12.12",
+]
+
+[project.scripts]
+tide = "tide.cli:main"
+
+[project.urls]
+Homepage = "https://github.com/marcotag93/TIDE"
+Repository = "https://github.com/marcotag93/TIDE"
+Documentation = "https://github.com/marcotag93/TIDE#readme"
+"Bug Tracker" = "https://github.com/marcotag93/TIDE/issues"
+
+[tool.hatch.version]
+path = "src/tide/__init__.py"
+
+[tool.hatch.build]
+exclude = ["CLAUDE.md"]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/tide"]
+
+[tool.hatch.build.targets.wheel.force-include]
+"config_template.yml" = "tide/data/config_template.yml"
+
+# =============================================================================
+# Tool Configurations
+# =============================================================================
+
+[tool.black]
+line-length = 100
+target-version = ["py311"]
+include = '\.pyi?$'
+exclude = '''
+/(
+    \.git
+  | \.hg
+  | \.mypy_cache
+  | \.tox
+  | \.venv
+  | _build
+  | buck-out
+  | build
+  | dist
+  | __pycache__
+)/
+'''
+
+[tool.isort]
+profile = "black"
+line_length = 100
+known_first_party = ["tide"]
+skip = [".git", ".venv", "build", "dist"]
+
+[tool.mypy]
+python_version = "3.11"
+warn_return_any = true
+warn_unused_configs = true
+ignore_missing_imports = true
+exclude = ["tests/", "build/", "dist/"]
+
+# Explicit baseline for legacy modules. New modules and already-clean modules
+# remain checked; entries should be removed as their annotations are repaired.
+[[tool.mypy.overrides]]
+module = [
+    "tide.cli",
+    "tide.console.console_ui",
+    "tide.console.renderer",
+    "tide.console.terminal",
+    "tide.console.worker_reporter",
+    "tide.core.geometry",
+    "tide.core.io",
+    "tide.core.physics",
+    "tide.core.tractography",
+    "tide.core._reporting",
+    "tide.interfaces.grid_visualization",
+    "tide.interfaces.sampling",
+    "tide.interfaces.simnibs_interface",
+    "tide.interfaces.unified_estimation",
+    "tide.interfaces.visualization_3d",
+    "tide.utils.config",
+    "tide.utils.logging",
+    "tide.workflows._grid_reporting",
+    "tide.workflows._shared",
+    "tide.workflows.estimation",
+    "tide.workflows.grid_search",
+    "tide.workflows.standard",
+]
+ignore_errors = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py", "*_test.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
+addopts = "-v --tb=short"
+filterwarnings = ["ignore::DeprecationWarning", "ignore::UserWarning"]
+
+[tool.coverage.run]
+source = ["src/tide"]
+branch = true
+omit = ["*/tests/*", "*/__pycache__/*"]
+
+[tool.coverage.report]
+fail_under = 45
+show_missing = true
