@@ -797,21 +797,6 @@ uv sync --locked --extra dev
 
 Each GitHub Release also carries the exact `uv.lock` used for that release, the wheel and source distribution, and `SHA256SUMS`. SimNIBS remains a separately installed system dependency; the reference computational runtime is SimNIBS 4.5 with Python 3.11.
 
-### Publishing a release
-
-The package does not need to exist on either index beforehand. For the first release, create a **pending trusted publisher** separately on [TestPyPI](https://test.pypi.org/manage/account/publishing/) and [PyPI](https://pypi.org/manage/account/publishing/) with owner `marcotag93`, repository `TIDE`, workflow `release.yml`, project `tide-pipeline`, and environments `testpypi` and `pypi`, respectively. In GitHub, create matching `testpypi` and `pypi` environments and require manual approval on `pypi`.
-
-Use this order:
-
-1. Run all CI checks and `python scripts/check_release_metadata.py` on `main`.
-2. Create and push the exact version tag, for example `v1.30.0`.
-3. Dispatch the **Release** workflow from that tag to publish only to TestPyPI: `gh workflow run release.yml --ref v1.30.0`.
-4. Wait for the workflow to verify the published filenames, SHA-256 hashes, installation, and CLI on TestPyPI.
-5. Create the GitHub Release from the same tag. The workflow rebuilds deterministically, repeats the TestPyPI verification, pauses for the `pypi` environment approval, and then publishes to PyPI.
-6. Verify `python -m pip install tide-pipeline==1.30.0` in a clean Python 3.11 environment, then archive the GitHub release on Zenodo.
-
-Never upload a wheel manually after a failed workflow. PyPI artifacts are immutable: diagnose the failure and, if any artifact was already published, issue a new patch version.
-
 ---
 
 ## License
